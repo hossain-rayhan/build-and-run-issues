@@ -1,0 +1,515 @@
+---
+# create adot-col namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: adot-col3
+  labels:
+    name: adot-col3
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adot-collector-conf
+  namespace: adot-col3
+  labels:
+    app: aws-adot
+    component: adot-collector-conf
+data:
+  adot-collector-config: |
+    receivers:
+      prometheus:
+        config:
+          global:
+            scrape_interval: 1m
+            scrape_timeout: 50s
+
+          scrape_configs:
+          - job_name: 'kubernetes-cadvisor'
+            sample_limit: 10000
+            scheme: https
+            # metrics_path: /metrics/cadvisor
+  
+            kubernetes_sd_configs:
+            - role: node
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              insecure_skip_verify: true
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+  
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+                # Only for Kubernetes ^1.7.3.
+                # See: https://github.com/prometheus/prometheus/issues/2916
+              - target_label: __address__
+                # replacement: kubernetes.default.svc.cluster.local:443
+                replacement: kubernetes.default.svc:443
+              - source_labels: [__meta_kubernetes_node_name]
+                regex: (.+)
+                target_label: __metrics_path__
+                replacement: /api/v1/nodes/$${1}/proxy/metrics/cadvisor
+            metric_relabel_configs:
+              - action: replace
+                source_labels: [id]
+                regex: '^/machine\.slice/machine-rkt\\x2d([^\\]+)\\.+/([^/]+)\.service$'
+                target_label: rkt_container_name
+                replacement: '$${2}-$${1}'
+              - action: replace
+                source_labels: [id]
+                regex: '^/system\.slice/(.+)\.service$'
+                target_label: systemd_service_name
+                replacement: '$${1}'
+    processors:
+      filter/strict:
+        metrics:
+          include:
+            match_type: strict
+            metric_names:
+              - container_spec_cpu_quota
+              - container_spec_memory_limit_bytes
+      filter:
+        metrics:
+          include:
+            match_type: regexp
+            metric_names:
+              - new_container_.*
+              - pod_.*
+              - node_.*
+      metricstransform:
+        transforms:
+          - include: container_spec_cpu_quota
+            new_name: new_container_cpu_limit
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_spec_cpu_shares
+            new_name: new_container_cpu_request
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_spec_memory_limit_bytes
+            new_name: new_container_memory_limit
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_cache
+            new_name: new_container_memory_cache
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_max_usage_bytes
+            new_name: new_container_memory_max_usage
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_usage_bytes
+            new_name: new_container_memory_usage
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_working_set_bytes
+            new_name: new_container_memory_working_set
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_rss
+            new_name: new_container_memory_rss
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_swap
+            new_name: new_container_memory_swap
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_failcnt
+            new_name: new_container_memory_failcnt
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_failures_total
+            new_name: new_container_memory_hierarchical_pgfault
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgfault", "scope": "hierarchy"}
+          - include: container_memory_failures_total
+            new_name: new_container_memory_hierarchical_pgmajfault
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgmajfault", "scope": "hierarchy"}
+          - include: container_memory_failures_total
+            new_name: new_container_memory_pgfault
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgfault", "scope": "container"}
+          - include: container_memory_failures_total
+            new_name: new_container_memory_pgmajfault
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgmajfault", "scope": "container"}
+          - include: container_fs_limit_bytes
+            new_name: new_container_filesystem_capacity
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_fs_usage_bytes
+            new_name: new_container_filesystem_usage
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "(.|\\s)*\\S(.|\\s)*"}
+          # POD LEVEL METRICS
+          - include: container_spec_cpu_quota
+            new_name: pod_cpu_limit
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_spec_cpu_shares
+            new_name: pod_cpu_request
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_spec_memory_limit_bytes
+            new_name: pod_memory_limit
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_cache
+            new_name: pod_memory_cache
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_max_usage_bytes
+            new_name: pod_memory_max_usage
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_usage_bytes
+            new_name: pod_memory_usage
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_working_set_bytes
+            new_name: pod_memory_working_set
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_rss
+            new_name: pod_memory_rss
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_swap
+            new_name: pod_memory_swap
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_failcnt
+            new_name: pod_memory_failcnt
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_memory_failures_total
+            new_name: pod_memory_hierarchical_pgfault
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgfault", "scope": "hierarchy"}
+          - include: container_memory_failures_total
+            new_name: pod_memory_hierarchical_pgmajfault
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgmajfault", "scope": "hierarchy"}
+          - include: container_memory_failures_total
+            new_name: pod_memory_pgfault
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgfault", "scope": "container"}
+          - include: container_memory_failures_total
+            new_name: pod_memory_pgmajfault
+            action: insert
+            match_type: regexp
+            match_labels: {"image": "^$", "container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*", "failure_type": "pgmajfault", "scope": "container"}
+          - include: container_network_receive_bytes_total
+            new_name: pod_network_rx_bytes
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_network_receive_packets_dropped_total
+            new_name: pod_network_rx_dropped
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_network_receive_errors_total
+            new_name: pod_network_rx_errors
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_network_receive_packets_total
+            new_name: pod_network_rx_packets
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_network_transmit_bytes_total
+            new_name: pod_network_tx_bytes
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_network_transmit_packets_dropped_total
+            new_name: pod_network_tx_dropped
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_network_transmit_errors_total
+            new_name: pod_network_tx_errors
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          - include: container_network_transmit_packets_total
+            new_name: pod_network_tx_packets
+            action: insert
+            match_type: regexp
+            match_labels: {"container": "^$", "pod": "(.|\\s)*\\S(.|\\s)*"}
+          # NODE LEVEL METRICS  
+          - include: container_spec_cpu_shares
+            new_name: node_cpu_limit
+            action: insert
+            match_type: strict
+            match_labels: {"id": "/"}
+          - include: container_spec_memory_limit_bytes
+            new_name: node_memory_limit
+            action: insert
+            match_type: strict
+            match_labels: {"id": "/"}
+      resourcedetection:
+        detectors: [eks]
+      experimental_metricsgeneration:
+        rules:
+          - name: NodeMemoryLimitCalculate
+            unit: Percent
+            type: calculate
+            metric1: node_memory_limit
+            metric2: node_memory_limit
+            operation: divide
+          - name: NodeMemoryLimitScale
+            unit: Megabytes
+            type: scale
+            metric1: node_memory_limit
+            scale_by: 10
+            operation: multiply  
+      metricstransform/renamecontainermetrics:
+        transforms:
+          - include: ^new_(.*)$
+            match_type: regexp
+            action: update
+            new_name: $1
+          - include: pod_.*
+            match_type: regexp
+            action: update
+            operations:
+              - action: add_label
+                new_label: Type
+                new_value: "Pod"
+              - action: add_label
+                new_label: ClusterName
+                new_value: texas
+          - include: container_.*
+            match_type: regexp
+            action: update
+            operations:
+              - action: add_label
+                new_label: Type
+                new_value: Container
+              - action: add_label
+                new_label: ClusterName
+                new_value: texas
+          - include: pod_.*
+            action: update
+            operations:
+              - action: update_label
+                label: namespace
+                new_label: Namespace
+              - action: update_label
+                label: pod
+                new_label: PodName
+      batch:
+    exporters:
+      awsemf:
+        log_group_name: '/aws/containerinsights/texas/performance'
+        log_stream_name: 'cadvisor-far-may1413'
+        namespace: 'cadvisor-far-may1404'
+        dimension_rollup_option: 1
+        region: us-east-2
+        resource_to_telemetry_conversion:
+          enabled: true
+      logging:
+        loglevel: debug
+
+    extensions:
+      health_check:
+      pprof:
+        endpoint: :1888
+      zpages:
+        endpoint: :55679
+
+    service:
+      extensions: [pprof, zpages, health_check]
+      pipelines:
+        metrics:
+          receivers: [prometheus]
+          processors: [metricstransform, filter, experimental_metricsgeneration, metricstransform/renamecontainermetrics, resourcedetection]
+          exporters: [logging, awsemf]
+---
+# create adot-col service account and role binding
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: amp-iamproxy-ingest-service-account
+  namespace: adot-col3
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::803860917211:role/amp-iamproxy-ingest-role
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: adotcol-admin-role
+rules:
+  - apiGroups: [""]
+    resources:
+    - nodes
+    - nodes/proxy
+    - nodes/metrics
+    - services
+    - endpoints
+    - pods
+    - pods/proxy
+    verbs: ["get", "list", "watch"]
+  - apiGroups:
+    - extensions
+    resources:
+    - ingresses
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics", "/metrics/cadvisor"]
+    verbs: ["get", "list", "watch"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: adotcol-admin-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: amp-iamproxy-ingest-service-account
+    namespace: adot-col3
+roleRef:
+  kind: ClusterRole
+  name: adotcol-admin-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adot-collector
+  namespace: adot-col3
+  labels:
+    app: aws-adot
+    component: adot-collector
+spec:
+  ports:
+  - name: metrics # Default endpoint for querying metrics.
+    port: 8888
+  selector:
+    component: adot-collector
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: adot-collector
+  namespace: adot-col3
+  labels:
+    app: aws-adot
+    component: adot-collector
+spec:
+  selector:
+    matchLabels:
+      app: aws-adot
+      component: adot-collector
+  #minReadySeconds: 5
+  serviceName: adot-collector
+  template:
+    metadata:
+      labels:
+        app: aws-adot
+        component: adot-collector
+    spec:
+      serviceAccountName: amp-iamproxy-ingest-service-account
+      securityContext:
+        fsGroup: 65534
+      containers:
+      - image: nginx:latest
+        name: nginx-far-100
+        resources:
+          limits:
+            cpu: 0.5
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 200Mi
+      - command:
+          - "/otelcontribcol"
+          - "--config=/conf/adot-collector-config.yaml"
+          - "--log-level=DEBUG"
+        # image: otel/opentelemetry-collector-contrib:latest
+        # image: 868155213681.dkr.ecr.us-east-1.amazonaws.com/otel-ci-integ-test
+        image: rhossai2/otel-contrib:v0.0.0
+        name: contrib-collector-fargate
+        env:
+          - name: AWS_REGION
+            value: "us-east-2"
+          - name: K8S_NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: HOST_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+          - name: HOST_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: K8S_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        resources:
+          limits:
+            cpu: 1
+            memory: 2Gi
+          requests:
+            cpu: 200m
+            memory: 400Mi
+        ports:
+        - containerPort: 8888  # Default endpoint for querying metrics.
+        volumeMounts:
+        - name: adot-collector-config-vol
+          mountPath: /conf
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 13133 # Health Check extension default port.
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 13133 # Health Check extension default port.
+      volumes:
+        - configMap:
+            name: adot-collector-conf
+            items:
+              - key: adot-collector-config
+                path: adot-collector-config.yaml
+          name: adot-collector-config-vol
+---
