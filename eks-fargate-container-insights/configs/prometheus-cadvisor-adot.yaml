@@ -299,8 +299,6 @@ spec:
           - "/awscollector"
           - "--config=/conf/adot-collector-config.yaml"
           - "--log-level=DEBUG"
-        # image: otel/opentelemetry-collector-contrib:latest
-        # image: 868155213681.dkr.ecr.us-east-1.amazonaws.com/otel-ci-integ-test
         image: rhossai2/adot:v0.0.4
         name: contrib-collector-fargate
         env:
