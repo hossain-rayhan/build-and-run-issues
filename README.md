@@ -201,9 +201,6 @@ If we find any conflicts, let’s merge them manually first. If we see any confl
 While resolving rebase conflicts, accept current change means “Changes in your local branch”
 
 
-GitHub personal token sept2021:
-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
-
 *Coredump EC2:*
 sudo su
 echo "core.%e.%p.%h.%t" > /proc/sys/kernel/core_pattern
